@@ -231,7 +231,7 @@ async def parse(event, cmd='', use_reply=False):
 
     return text
 
-async def ingest_text(text, tokens, chat_id, sender_id, raw_id=''):
+async def ingest_text(text, tokens, chat_id, sender_id, time, raw_id=''):
     lines = model.cut_lines(text, tokens)
 
     # remove duplicate lines
@@ -267,7 +267,7 @@ async def ingest_text(text, tokens, chat_id, sender_id, raw_id=''):
 
         # write to corpus table
         line_count = len(lines)
-        times = (int(mktime(event.message.date.timetuple())),) * line_count
+        times = (int(time),) * line_count
         raws = (raw_id,) * line_count
         chats = (find_chat(chat_id),) * line_count
         users = (find_user(sender_id),) * line_count
@@ -775,7 +775,7 @@ async def reprocessraw(event):
     for row in cursor.execute("SELECT raw_id, raw_text, raw_chat, raw_user FROM raw"):
         raw_id, raw_text, raw_chat, raw_user = row
         tokens = model.cut(raw_text)
-        await ingest_text(raw_text, tokens, raw_chat, raw_user, raw_id)
+        await ingest_text(raw_text, tokens, raw_chat, raw_user, mktime(event.message.date.timetuple()), raw_id)
     
     await event.respond('✅重新處理完成，請重新啟動bot來載入新模型。')
     
@@ -811,7 +811,7 @@ async def reply(event):
         tokens = model.cut(text)
         response = model.respond(text, tokens=tokens) or model.generate()
         if get_user_right(sender_id) >= (USER_RIGHT_LEVEL_NORMAL if chat_id < 0 else USER_RIGHT_LEVEL_TRUSTED):
-            await ingest_text(text, tokens, chat_id, sender_id)
+            await ingest_text(text, tokens, chat_id, sender_id, mktime(event.message.date.timetuple()))
     else:
         response = model.generate()
 
