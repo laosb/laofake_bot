@@ -814,6 +814,7 @@ async def reply(event):
             if not should_always_respond:
                 return
     else:
+        should_always_respond = False
         user_name = get_user_name(sender_id) or sender_id
         await log_in_chat('pm', fwd_msgs=event.message, username=user_name, userid=sender_id)
 
