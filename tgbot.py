@@ -32,6 +32,7 @@ USER_RIGHT_LEVEL_NAME = {
 }
 
 COMMAND_LIST = (
+    '/addword',
     '/addword_cn',
     '/addword_tw',
     '/ban',
@@ -45,6 +46,7 @@ COMMAND_LIST = (
     '/reload',
     '/reload_config',
     '/restrict',
+    '/rmword',
     '/rmword_cn',
     '/rmword_tw',
     '/source',
