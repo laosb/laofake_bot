@@ -800,12 +800,13 @@ async def reply(event):
 
     # only say something when we are replied in groups
     if chat_id < 0:
+        should_always_respond = config.always_respond_to.get(sender_id)
         if event.is_reply:
             reply_to_msg = await event.message.get_reply_message()
-            if not reply_to_msg.sender.is_self:
+            if (not should_always_respond) and (not reply_to_msg.sender.is_self):
                 return
         else:
-            if not config.always_respond_to.get(sender_id):
+            if not should_always_respond:
                 return
     else:
         user_name = get_user_name(sender_id) or sender_id
