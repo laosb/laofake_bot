@@ -230,6 +230,52 @@ async def parse(event, cmd='', use_reply=False):
 
     return text
 
+async def ingest_text(text, tokens, chat_id, sender_id, raw_id=''):
+    lines = model.cut_lines(text, tokens)
+
+    # remove duplicate lines
+    cursor.execute(f"""
+        SELECT corpus_line FROM corpus
+        WHERE corpus_line IN ({','.join('?'*len(lines))})
+        """, lines)
+    rst = cursor.fetchall()
+    dup_lines = tuple(r[0] for r in rst) or ()
+    logging.info(f'dup_lines: {dup_lines}')
+    lines_set = set(lines)
+    lines_set -= set(dup_lines)
+    lines = list(lines_set)
+
+    if lines:
+        weights = map(get_line_weight, lines)
+        user_weight = get_user_weight(sender_id)
+        weights = tuple(user_weight * w for w in weights)
+
+        logging.info(f'feed: {str(lines)}, user: {sender_id}, chat: {chat_id}, weight: {weights}')
+        model.feed(lines, weight=weights)
+
+        if raw_id == '':
+            # write to raw table
+            cursor.execute("INSERT OR IGNORE INTO raw (raw_text) VALUES (?)", (text,))
+            conn.commit()
+            cursor.execute("SELECT raw_id FROM raw WHERE raw_text = ?", (text,))
+            raw_id, = cursor.fetchone()
+        else:
+            # remove existing corpus lines with specific raw_id
+            cursor.execute("DELETE FROM corpus WHERE corpus_raw = ?", (raw_id,))
+            conn.commit()
+
+        # write to corpus table
+        line_count = len(lines)
+        times = (int(mktime(event.message.date.timetuple())),) * line_count
+        raws = (raw_id,) * line_count
+        chats = (find_chat(chat_id),) * line_count
+        users = (find_user(sender_id),) * line_count
+        cursor.executemany("""
+            INSERT OR IGNORE INTO corpus (corpus_time, corpus_line, corpus_raw, corpus_chat, corpus_user, corpus_weight)
+            VALUES (?,?,?,?,?,?)
+            """, zip(times, lines, raws, chats, users, weights))
+        conn.commit()
+
 @bot.on(events.NewMessage(incoming=True, pattern=rf'^/reload_config($|\s|@{escaped_bot_name})'))
 async def reload_config(event):
     global get_line_weight
@@ -710,6 +756,29 @@ async def erase(event):
     await msg.edit(f'请查收您近期 {len(lines)} 条消息组成的词云。其中只包括{"本群" if chat_id < 0 else "该私聊中"}我收集的，即您回复给我的消息。', file=tmpfile.name)
     tmpfile.close()
 
+@bot.on(events.NewMessage(incoming=True, pattern=rf'^/reprocessraw($|\s|@{escaped_bot_name})'))
+async def reprocessraw(event):
+    chat_id = event.chat_id
+    sender_id = event.sender_id
+
+    if not chat_is_allowed(chat_id) or is_banned(sender_id):
+        return
+    
+    user_right = get_user_right(sender_id)
+    if user_right < USER_RIGHT_LEVEL_ROOT:
+        await event.respond(f'❌ 此操作需要 {USER_RIGHT_LEVEL_NAME[USER_RIGHT_LEVEL_ROOT]} 权限，'
+            f'您的权限是 {USER_RIGHT_LEVEL_NAME[user_right]}。\n'
+            f'如果您已成为特定群的群管，可使用 /reload 指令刷新权限。')
+        return
+
+    for row in cursor.execute("SELECT raw_id, raw_text, raw_chat, raw_user FROM raw"):
+        raw_id, raw_text, raw_chat, raw_user = row
+        tokens = model.cut(raw_text)
+        await ingest_text(raw_text, tokens, raw_chat, raw_user, raw_id)
+    
+    await event.respond('✅重新處理完成，請重新啟動bot來載入新模型。')
+    
+    
 @bot.on(events.NewMessage(incoming=True))
 async def reply(event):
     chat_id = event.chat_id
@@ -741,45 +810,7 @@ async def reply(event):
         tokens = model.cut(text)
         response = model.respond(text, tokens=tokens) or model.generate()
         if get_user_right(sender_id) >= (USER_RIGHT_LEVEL_NORMAL if chat_id < 0 else USER_RIGHT_LEVEL_TRUSTED):
-            lines = model.cut_lines(text, tokens)
-
-            # remove duplicate lines
-            cursor.execute(f"""
-                SELECT corpus_line FROM corpus
-                WHERE corpus_line IN ({','.join('?'*len(lines))})
-                """, lines)
-            rst = cursor.fetchall()
-            dup_lines = tuple(r[0] for r in rst) or ()
-            logging.info(f'dup_lines: {dup_lines}')
-            lines_set = set(lines)
-            lines_set -= set(dup_lines)
-            lines = list(lines_set)
-
-            if lines:
-                weights = map(get_line_weight, lines)
-                user_weight = get_user_weight(sender_id)
-                weights = tuple(user_weight * w for w in weights)
-
-                logging.info(f'feed: {str(lines)}, user: {sender_id}, chat: {chat_id}, weight: {weights}')
-                model.feed(lines, weight=weights)
-
-                # write to raw table
-                cursor.execute("INSERT OR IGNORE INTO raw (raw_text) VALUES (?)", (text,))
-                conn.commit()
-                cursor.execute("SELECT raw_id FROM raw WHERE raw_text = ?", (text,))
-                raw_id, = cursor.fetchone()
-
-                # write to corpus table
-                line_count = len(lines)
-                times = (int(mktime(event.message.date.timetuple())),) * line_count
-                raws = (raw_id,) * line_count
-                chats = (find_chat(chat_id),) * line_count
-                users = (find_user(sender_id),) * line_count
-                cursor.executemany("""
-                    INSERT OR IGNORE INTO corpus (corpus_time, corpus_line, corpus_raw, corpus_chat, corpus_user, corpus_weight)
-                    VALUES (?,?,?,?,?,?)
-                    """, zip(times, lines, raws, chats, users, weights))
-                conn.commit()
+            await ingest_text(text, tokens, chat_id, sender_id)
     else:
         response = model.generate()
 
