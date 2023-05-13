@@ -772,7 +772,9 @@ async def reprocessraw(event):
             f'如果您已成为特定群的群管，可使用 /reload 指令刷新权限。')
         return
 
-    for row in cursor.execute("SELECT raw_id, raw_text, raw_chat, raw_user FROM raw"):
+    cursor.execute("SELECT raw_id, raw_text, raw_chat, raw_user FROM raw")
+    rows = cursor.fetchall()
+    for row in rows:
         raw_id, raw_text, raw_chat, raw_user = row
         tokens = model.cut(raw_text)
         await ingest_text(raw_text, tokens, raw_chat, raw_user, mktime(event.message.date.timetuple()), raw_id)
