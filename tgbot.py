@@ -50,6 +50,7 @@ COMMAND_LIST = (
     '/start',
     '/userweight',
     '/wordcloud',
+    '/reprocessraw',
 )
 
 conn = sqlite3.connect(config.dbfile)
