@@ -824,7 +824,7 @@ async def reply(event):
         response = model.generate()
 
     if response:
-        if should_always_respond and (random.rand() > (config.always_respond_prob or 1)):
+        if should_always_respond and (random.rand() > (config.always_respond_prob or 0)):
             return
         if hasattr(config, 'MAX_MSG_LEN') and config.MAX_MSG_LEN > 0:
             await event.respond(response[:config.MAX_MSG_LEN])
