@@ -9,6 +9,7 @@ from importlib import reload
 from markov import CorpusModel
 from wordcloud import WordCloud
 from telethon import TelegramClient, events
+from numpy import random
 
 logging.basicConfig(level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
